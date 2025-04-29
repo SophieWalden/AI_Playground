@@ -1,0 +1,26 @@
+###
+#
+# AI Pacman Arena
+#
+# Fight a basic AI enemy to see who can get the most amount of pellets in a pacman style map
+# Winner is whoever the highest after 300 turns or hits 50 pellets whichever happens first
+#
+# The board, your position, and your enemy position is passed into your next_move function
+# All you have to do is return a valid direction to move ["left", "right", "up", "down"]
+# 
+# Do not use the print() function, instead use self.log to log both strings and tuples/lists
+#
+# You can block your enemy, make an algorithim that can beat this basic pathing agent
+#
+###
+
+class myAi(Ai):
+    def __init__(self, player_id):
+      super().__init__()
+      self.player_id = player_id 
+
+      self.log(f"Player ID: {self.player_id}") 
+
+    def next_move(self, board, position, enemy_position):
+      # Define your AI logic here
+      return random.choice(["left", "right", "up", "down"])

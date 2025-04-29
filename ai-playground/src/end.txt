@@ -1,0 +1,12 @@
+game = Game(num_players=2)
+
+MAX_TURNS = 300
+PELLET_TARGET = 50
+
+for _ in range(MAX_TURNS):
+    game.update()
+
+    if any(score >= PELLET_TARGET for pid, score in game.scores.items()):
+        break
+
+print(game.end_game())
