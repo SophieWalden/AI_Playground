@@ -1,0 +1,219 @@
+import random
+
+class Game:
+    def __init__(self, num_players=2):
+        self.board = self.generate_connected_maze()
+        for _ in range(2): self.add_horizontal_tunnel(self.board, random.randint(1, len(self.board) - 2))
+        self.board = self.apply_horizontal_symmetry(self.board)
+        self.positions = self.get_two_spawn_positions_connected()
+        
+        self.players = []  
+        self.players.append(enemyAi(0))
+        self.players.append(myAi(1))
+
+        self.running = True
+        self.turns = [] 
+        self.scores = {i: 0 for i in range(num_players)}
+
+    def generate_connected_maze(self, width=15, height=15):
+        board = [["#" for _ in range(width)] for _ in range(height)]
+
+        def in_bounds(x, y):
+            return 0 <= x < height and 0 <= y < width
+
+        def carve_passages_from(x, y):
+            directions = [(2, 0), (-2, 0), (0, 2), (0, -2)]
+            random.shuffle(directions)
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                if in_bounds(nx, ny) and board[nx][ny] == "#":
+                    board[nx][ny] = "o" 
+                    board[x + dx // 2][y + dy // 2] = "o"
+                    carve_passages_from(nx, ny)
+
+        board[1][1] = "o"
+        carve_passages_from(1, 1)
+
+        return board
+
+    def apply_horizontal_symmetry(self, board):
+        height = len(board)
+        width = len(board[0])
+        for i in range(height):
+            for j in range(width // 2):
+                board[i][width - j - 1] = board[i][j]
+        return board
+
+    def add_horizontal_tunnel(self, board, row):
+        for col in range(1, len(board[0]) - 1):
+            if board[row][col] == "#":
+                board[row][col] = "o"
+    
+    def get_two_spawn_positions_connected(self):
+        from collections import deque
+
+        def bfs(start):
+            visited = set()
+            q = deque([start])
+            while q:
+                x, y = q.popleft()
+                visited.add((x, y))
+                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < len(self.board) and 0 <= ny < len(self.board[0]):
+                        if self.board[nx][ny] != '#' and (nx, ny) not in visited:
+                            q.append((nx, ny))
+            return visited
+
+        open_cells = [(i, j) for i in range(len(self.board)) for j in range(len(self.board[0])) if self.board[i][j] == 'o']
+        start = random.choice(open_cells)
+        reachable = bfs(start)
+        reachable = list(reachable)
+        reachable.remove(start)
+        second = random.choice(reachable)
+        return [start, second]
+
+    def update_players(self):
+        for i, player in enumerate(self.players):
+            move = player.next_move(self.board, self.positions[player.player_id], self.positions[1 - player.player_id])
+            self.move_player(i, move)
+
+    def position_taken(self, x, y):
+        for position in self.positions:
+            if position[0] == x and position[1] == y: return True
+        
+        return False
+
+    def move_player(self, player_index, move):
+        x, y = self.positions[player_index]
+
+        if move == "up" and x > 0 and self.board[x-1][y] != '#' and not self.position_taken(x-1, y):
+            self.positions[player_index] = (x-1, y)
+        elif move == "down" and x < len(self.board) - 1 and self.board[x+1][y] != '#' and not self.position_taken(x+1, y):
+            self.positions[player_index] = (x+1, y)
+        elif move == "left" and y > 0 and self.board[x][y-1] != '#' and not self.position_taken(x, y - 1):
+            self.positions[player_index] = (x, y-1)
+        elif move == "right" and y < len(self.board[0]) - 1 and self.board[x][y+1] != '#' and not self.position_taken(x, y+1):
+            self.positions[player_index] = (x, y+1)
+
+        if self.board[self.positions[player_index][0]][self.positions[player_index][1]] == 'o':
+            self.scores[player_index] += 1
+            self.board[self.positions[player_index][0]][self.positions[player_index][1]] = ' ' 
+
+
+    def get_player_logs(self):
+        return [player.get_logs() for player in self.players if type(player) == myAi][0]
+
+    def log_turn(self):
+        def array_to_json_string(arr):
+            return "[" + ",".join(
+                "[" + ",".join(f'"{item}"' for item in row) + "]" for row in arr
+            ) + "]"
+    
+        turn_data = f'''
+        {{
+            "player_positions": {[list(position) for position in self.positions]},
+            "turn_number": {len(self.turns) + 1},
+            "scores": [{self.scores[0]}, {self.scores[1]}],
+            "board": {array_to_json_string(self.board)},
+            "player_logs": "{self.get_player_logs()}"
+        }}
+        '''
+        self.turns.append(turn_data.strip())  
+
+    def get_turns_pseudo_json(self):
+        return "[" + ",".join(self.turns) + "]"
+
+    def update(self):
+        self.update_players()
+        self.log_turn()  
+
+
+    def end_game(self):
+        return self.get_turns_pseudo_json()
+
+
+class Ai:
+    def __init__(self):
+        self.logs = []
+
+    def log(self, message):
+        if type(message) == str:self.logs.append(message)
+        elif type(message) in [list, tuple]:
+            self.logs.append(" ".join(map(str, message)))
+
+    def get_logs(self):
+        return ",".join(self.logs)
+
+
+class enemyAi():
+    def __init__(self, player_id):
+        self.player_id = player_id
+        self.last_move = None  
+
+    def next_move(self, board, position, _):
+        def in_bounds(x, y):
+            return 0 <= x < len(board) and 0 <= y < len(board[0])
+
+        def is_walkable(x, y):
+            return in_bounds(x, y) and board[x][y] != '#'
+
+        directions = {
+            "up": (-1, 0),
+            "down": (1, 0),
+            "left": (0, -1),
+            "right": (0, 1)
+        }
+
+        def find_nearest_pellet():
+            queue = [(position, 0)]
+            visited = set()
+            while queue:
+                (x, y), dist = queue.pop(0)
+                if dist > 5:
+                    break
+                if board[x][y] == 'o':
+                    return (x, y)
+                for dx, dy in directions.values():
+                    nx, ny = x + dx, y + dy
+                    if (nx, ny) not in visited and is_walkable(nx, ny):
+                        visited.add((nx, ny))
+                        queue.append(((nx, ny), dist + 1))
+            return None
+
+        pellet = find_nearest_pellet()
+        if pellet:
+            best_move = None
+            best_dist = float('inf')
+            for move, (dx, dy) in directions.items():
+                nx, ny = position[0] + dx, position[1] + dy
+                if is_walkable(nx, ny):
+                    dist = abs(nx - pellet[0]) + abs(ny - pellet[1])
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_move = move
+            if best_move:
+                self.last_move = best_move
+                return best_move
+
+        reverse = {
+            "up": "down",
+            "down": "up",
+            "left": "right",
+            "right": "left"
+        }
+        moves = []
+        for move, (dx, dy) in directions.items():
+            nx, ny = position[0] + dx, position[1] + dy
+            if is_walkable(nx, ny):
+                moves.append(move)
+
+        if self.last_move and reverse.get(self.last_move) in moves and len(moves) > 1:
+            moves.remove(reverse[self.last_move])
+
+        if moves:
+            self.last_move = random.choice(moves)
+            return self.last_move
+
+        return "up"
+
